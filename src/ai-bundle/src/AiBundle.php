@@ -87,6 +87,8 @@ use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Message\Content\File;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
+use Symfony\AI\Platform\Contract\JsonSchema\Describer\ObjectDescriberInterface;
+use Symfony\AI\Platform\Contract\JsonSchema\Describer\PropertyDescriberInterface;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface;
@@ -344,6 +346,10 @@ final class AiBundle extends AbstractBundle
             ->addTag('ai.platform.model_client');
         $builder->registerForAutoconfiguration(ResultConverterInterface::class)
             ->addTag('ai.platform.result_converter');
+        $builder->registerForAutoconfiguration(PropertyDescriberInterface::class)
+            ->addTag('ai.platform.json_schema.describer');
+        $builder->registerForAutoconfiguration(ObjectDescriberInterface::class)
+            ->addTag('ai.platform.json_schema.describer');
 
         if (!ContainerBuilder::willBeAvailable('symfony/security-core', AuthorizationCheckerInterface::class, ['symfony/ai-bundle'])) {
             $builder->removeDefinition('ai.security.is_granted_attribute_listener');

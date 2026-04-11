@@ -12,6 +12,7 @@
 namespace Symfony\AI\Platform\StructuredOutput;
 
 use Symfony\AI\Platform\Capability;
+use Symfony\AI\Platform\Contract\JsonSchema\JsonSchemaProviderInterface;
 use Symfony\AI\Platform\Event\InvocationEvent;
 use Symfony\AI\Platform\Event\ResultEvent;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
@@ -19,6 +20,8 @@ use Symfony\AI\Platform\Exception\MissingModelSupportException;
 use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Serializer\SerializerInterface;
+
+use function Symfony\Component\String\u;
 
 /**
  * @author Christopher Hertel <mail@christopher-hertel.de>
@@ -61,6 +64,28 @@ final class PlatformSubscriber implements EventSubscriberInterface
         }
 
         $responseFormat = $options[self::RESPONSE_FORMAT];
+
+        if ($responseFormat instanceof JsonSchemaProviderInterface) {
+            if (true === ($options['stream'] ?? false)) {
+                throw new InvalidArgumentException('Streamed responses are not supported for structured output.');
+            }
+
+            if (!$event->getModel()->supports(Capability::OUTPUT_STRUCTURED)) {
+                throw MissingModelSupportException::forStructuredOutput($event->getModel());
+            }
+
+            $options[self::RESPONSE_FORMAT] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => u($responseFormat::class)->afterLast('\\')->toString(),
+                    'schema' => $responseFormat->buildJsonSchema(),
+                    'strict' => true,
+                ],
+            ];
+            $event->setOptions($options);
+
+            return;
+        }
 
         if (\is_object($responseFormat)) {
             $this->objectToPopulate = $responseFormat;

@@ -16,6 +16,7 @@ use Symfony\AI\Agent\Toolbox\Exception\ToolConfigurationException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolException;
 use Symfony\AI\Agent\Toolbox\ToolFactoryInterface;
 use Symfony\AI\Platform\Contract\JsonSchema\Factory;
+use Symfony\AI\Platform\Contract\JsonSchema\JsonSchemaProviderInterface;
 use Symfony\AI\Platform\Tool\ExecutionReference;
 use Symfony\AI\Platform\Tool\Tool;
 
@@ -50,11 +51,15 @@ final class ReflectionToolFactory implements ToolFactoryInterface
             $asTool = $attribute->newInstance();
 
             try {
+                $parameters = \is_object($reference) && $reference instanceof JsonSchemaProviderInterface
+                    ? $reference->buildJsonSchema()
+                    : $this->factory->buildParameters($className, $asTool->method);
+
                 yield new Tool(
                     new ExecutionReference($className, $asTool->method),
                     $asTool->name,
                     $asTool->description,
-                    $this->factory->buildParameters($className, $asTool->method),
+                    $parameters,
                 );
             } catch (\ReflectionException $e) {
                 throw ToolConfigurationException::invalidMethod($className, $asTool->method, $e);
