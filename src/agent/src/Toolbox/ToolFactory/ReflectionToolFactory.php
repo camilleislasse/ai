@@ -51,6 +51,9 @@ final class ReflectionToolFactory implements ToolFactoryInterface
             $asTool = $attribute->newInstance();
 
             try {
+                // JsonSchemaProviderInterface is only supported when $reference is an object (i.e. a service).
+                // When $reference is a class string, the interface cannot be called without instantiation,
+                // and reflection-based schema generation is used as fallback.
                 $parameters = \is_object($reference) && $reference instanceof JsonSchemaProviderInterface
                     ? $reference->buildJsonSchema()
                     : $this->factory->buildParameters($className, $asTool->method);

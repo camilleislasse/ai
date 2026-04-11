@@ -30,7 +30,7 @@ final class PlatformSubscriber implements EventSubscriberInterface
 {
     public const RESPONSE_FORMAT = 'response_format';
 
-    private string $outputType;
+    private ?string $outputType = null;
 
     private ?object $objectToPopulate = null;
 
@@ -74,10 +74,13 @@ final class PlatformSubscriber implements EventSubscriberInterface
                 throw MissingModelSupportException::forStructuredOutput($event->getModel());
             }
 
+            $name = u($responseFormat::class)->afterLast('\\')->toString();
+            $name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $name) ?: 'dynamic_schema';
+
             $options[self::RESPONSE_FORMAT] = [
                 'type' => 'json_schema',
                 'json_schema' => [
-                    'name' => u($responseFormat::class)->afterLast('\\')->toString(),
+                    'name' => $name,
                     'schema' => $responseFormat->buildJsonSchema(),
                     'strict' => true,
                 ],
@@ -106,7 +109,6 @@ final class PlatformSubscriber implements EventSubscriberInterface
         }
 
         $this->outputType = $className;
-
         $options[self::RESPONSE_FORMAT] = $this->responseFormatFactory->create($className);
 
         $event->setOptions($options);
@@ -130,7 +132,8 @@ final class PlatformSubscriber implements EventSubscriberInterface
 
         $event->setDeferredResult(new DeferredResult($converter, $deferred->getRawResult(), $options));
 
-        // Reset object to populate for next invocation
+        // Reset state for next invocation
         $this->objectToPopulate = null;
+        $this->outputType = null;
     }
 }
