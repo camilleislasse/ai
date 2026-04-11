@@ -26,6 +26,7 @@ use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
 use Symfony\AI\Platform\Result\ObjectResult;
 use Symfony\AI\Platform\Result\TextResult;
+use Symfony\AI\Platform\Contract\JsonSchema\JsonSchemaProviderInterface;
 use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
 use Symfony\AI\Platform\Tests\Fixtures\StructuredOutput\City;
 use Symfony\AI\Platform\Tests\Fixtures\StructuredOutput\MathReasoning;
@@ -418,6 +419,103 @@ final class PlatformSubscriberTest extends TestCase
         $this->assertInstanceOf(City::class, $result2);
         $this->assertNotSame($city1, $result2);
         $this->assertSame('Paris', $result2->name);
+    }
+
+    public function testProcessInputWithJsonSchemaProvider(): void
+    {
+        $processor = new PlatformSubscriber(new ConfigurableResponseFormatFactory());
+
+        $provider = new class implements JsonSchemaProviderInterface {
+            public function buildJsonSchema(): array
+            {
+                return [
+                    'type' => 'object',
+                    'properties' => [
+                        'status' => ['type' => 'string', 'enum' => ['active', 'inactive']],
+                    ],
+                    'required' => ['status'],
+                    'additionalProperties' => false,
+                ];
+            }
+        };
+
+        $model = new Model('gpt-4', [Capability::OUTPUT_STRUCTURED]);
+        $event = new InvocationEvent($model, new MessageBag(), ['response_format' => $provider]);
+
+        $processor->processInput($event);
+
+        $options = $event->getOptions();
+        $this->assertArrayHasKey('response_format', $options);
+        $this->assertSame('json_schema', $options['response_format']['type']);
+        $this->assertTrue($options['response_format']['json_schema']['strict']);
+        $this->assertSame($provider->buildJsonSchema(), $options['response_format']['json_schema']['schema']);
+    }
+
+    public function testProcessResultWithJsonSchemaProviderReturnsRawArray(): void
+    {
+        $processor = new PlatformSubscriber(new ConfigurableResponseFormatFactory());
+
+        $provider = new class implements JsonSchemaProviderInterface {
+            public function buildJsonSchema(): array
+            {
+                return [
+                    'type' => 'object',
+                    'properties' => ['status' => ['type' => 'string']],
+                    'required' => ['status'],
+                    'additionalProperties' => false,
+                ];
+            }
+        };
+
+        $model = new Model('gpt-4', [Capability::OUTPUT_STRUCTURED]);
+        $invocationEvent = new InvocationEvent($model, new MessageBag(), ['response_format' => $provider]);
+        $processor->processInput($invocationEvent);
+
+        $converter = new PlainConverter(new TextResult('{"status": "active"}'));
+        $deferred = new DeferredResult($converter, new InMemoryRawResult());
+        $resultEvent = new ResultEvent($model, $deferred, $invocationEvent->getOptions());
+
+        $processor->processResult($resultEvent);
+
+        $result = $resultEvent->getDeferredResult()->getResult();
+        $this->assertInstanceOf(ObjectResult::class, $result);
+        $this->assertSame(['status' => 'active'], $result->getContent());
+    }
+
+    public function testProcessInputWithJsonSchemaProviderThrowsExceptionWithStreaming(): void
+    {
+        $this->expectException(\Symfony\AI\Platform\Exception\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Streamed responses are not supported for structured output.');
+
+        $processor = new PlatformSubscriber(new ConfigurableResponseFormatFactory());
+
+        $provider = new class implements JsonSchemaProviderInterface {
+            public function buildJsonSchema(): array { return []; }
+        };
+
+        $model = new Model('gpt-4', [Capability::OUTPUT_STRUCTURED]);
+        $event = new InvocationEvent($model, new MessageBag(), [
+            'response_format' => $provider,
+            'stream' => true,
+        ]);
+
+        $processor->processInput($event);
+    }
+
+    public function testProcessInputWithJsonSchemaProviderThrowsExceptionWhenModelDoesNotSupportStructuredOutput(): void
+    {
+        $this->expectException(MissingModelSupportException::class);
+
+        $processor = new PlatformSubscriber(new ConfigurableResponseFormatFactory());
+
+        $provider = new class implements JsonSchemaProviderInterface {
+            public function buildJsonSchema(): array { return []; }
+        };
+
+        $model = new Model('gpt-3');
+        $event = new InvocationEvent($model, new MessageBag(), ['response_format' => $provider]);
+
+        $processor->processInput($event);
     }
 
     public function testMultipleObjectInstancesInSequenceAreHandledCorrectly()
